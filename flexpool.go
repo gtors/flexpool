@@ -147,7 +147,11 @@ func (p *Pool) spawnWorker() {
 	p.activeWorkers.Add(1)
 
 	go func() {
-		defer p.wg.Done()
+		defer func() {
+			p.activeWorkers.Add(^uint64(0)) // Decrement
+			p.wg.Done()
+		}()
+
 		for {
 			select {
 			case <-p.ctx.Done():

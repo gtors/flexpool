@@ -10,6 +10,8 @@ import (
 
 func TestPoolBasicFunctionality(t *testing.T) {
 	p := New(WithPoolSize(2), WithTasksBufferSize(10))
+	defer p.Close()
+
 	var counter int
 	var m sync.Mutex
 
@@ -43,15 +45,7 @@ func TestResizeUp(t *testing.T) {
 		WithPoolSize(2), // Initial pool size of 2 workers
 		WithResizeInterval(50*time.Millisecond),
 	)
-
-	// Send some tasks to ensure workers are spawned
-	for range 5 {
-		err := pool.SendTask(func() {
-			// Simulate a simple task
-			time.Sleep(10 * time.Millisecond)
-		})
-		assert.NoError(t, err)
-	}
+	defer pool.Close()
 
 	// Resize the pool to have more workers
 	err := pool.Resize(10)
@@ -61,43 +55,35 @@ func TestResizeUp(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Check if the pool size is increased to 10 workers
-	activeWorkers := pool.activeWorkers.Load()
-	assert.GreaterOrEqual(t, activeWorkers, uint64(5), "Active workers should be at least 5 after resizing up")
-
-	// Clean up by closing the pool
-	pool.Close()
+	activeWorkers := pool.GetActiveWorkersNumber()
+	assert.Equal(t, activeWorkers, uint64(10), "Active workers should be 10 after resizing up")
 }
 
 // TestResizeDown tests that resizing the pool decreases the number of workers
 func TestResizeDown(t *testing.T) {
 	// Create a pool with a large initial size and task buffer
 	pool := New(
-		WithPoolSize(10), // Initial pool size of 10 workers
+		WithPoolSize(100), // Initial pool size of 10 workers
 		WithResizeInterval(50*time.Millisecond),
 	)
+	defer pool.Close()
 
-	// Send enough tasks to utilize the workers
-	for range 20 {
-		err := pool.SendTask(func() {
-			// Simulate a simple task
-			time.Sleep(10 * time.Millisecond)
-		})
-		assert.NoError(t, err)
-	}
+	// Wait a bit to allow the resizer to scale the workers
+	time.Sleep(100 * time.Millisecond)
+
+	workersAtStart := pool.GetActiveWorkersNumber()
+	assert.Equal(t, workersAtStart, uint64(100), "At the start, active workers number should be 100")
 
 	// Resize the pool to have fewer workers
 	err := pool.Resize(5)
 	assert.NoError(t, err)
 
 	// Wait a bit to allow the resizer to scale down the workers
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// Check if the pool size is decreased to 5 workers
-	activeWorkers := pool.activeWorkers.Load()
-	assert.LessOrEqual(t, activeWorkers, uint64(5), "Active workers should be at most 5 after resizing down")
-
-	// Clean up by closing the pool
-	pool.Close()
+	activeWorkers := pool.GetActiveWorkersNumber()
+	assert.Equal(t, activeWorkers, uint64(5), "Active workers should be 5 after resizing down")
 }
 
 // TestResizeAfterClose tests that resizing does not work after the pool is closed
@@ -140,5 +126,5 @@ func TestResizeWithMultipleTasks(t *testing.T) {
 
 	// Check if the pool size is increased to 6 workers
 	activeWorkers := pool.GetActiveWorkersNumber()
-	assert.GreaterOrEqual(t, activeWorkers, uint64(6), "Active workers should be at least 6 after resizing up")
+	assert.Equal(t, activeWorkers, uint64(6), "Active workers should be at least 6 after resizing up")
 }
